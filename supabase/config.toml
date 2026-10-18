@@ -1,0 +1,13 @@
+# Only the parts this example needs; `supabase init` fills in the rest.
+project_id = "supabase-vetto-hook"
+
+# The hook calls the Edge Function directly with a signed payload, not a user JWT.
+[functions.before-user-created-hook]
+verify_jwt = false
+
+# Local development: point Supabase Auth (in Docker) at the local Edge Function.
+# In production, set the hook in Dashboard → Authentication → Hooks instead.
+[auth.hook.before_user_created]
+enabled = true
+uri = "http://host.docker.internal:54321/functions/v1/before-user-created-hook"
+secrets = "env(BEFORE_USER_CREATED_HOOK_SECRET)"

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Supabase + Vetto signup</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 380px; margin: 48px auto; padding: 0 16px; }
+      form { display: grid; gap: 8px; }
+      input, button { padding: 10px; font: inherit; }
+      #msg { min-height: 1.5em; }
+    </style>
+  </head>
+  <body>
+    <h1>Sign up</h1>
+    <form id="signup">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" minlength="8" required />
+      <button type="submit">Create account</button>
+      <p id="msg" role="status"></p>
+    </form>
+
+    <!-- Browser check (free on one site): typo fixes and throwaway blocking before the
+         request is sent. The hook still checks every signup on the server. -->
+    <script src="https://usevetto.com/v.js" data-site="pk_xxxxxxxxxxxxxxxxxxxx" defer></script>
+
+    <script type="module">
+      import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+      const supabase = createClient('https://YOUR-PROJECT.supabase.co', 'YOUR-ANON-OR-PUBLISHABLE-KEY');
+      const form = document.getElementById('signup');
+      const msg = document.getElementById('msg');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        msg.textContent = 'Creating account…';
+        const { error } = await supabase.auth.signUp({ email: form.email.value, password: form.password.value });
+        // A rejection from the hook arrives here as error.message. Show a fallback
+        // in case your Supabase version maps it to a generic error.
+        msg.textContent = error ? error.message || 'Please use a permanent email address.' : 'Check your inbox to confirm your email.';
+      });
+    </script>
+  </body>
+</html>
