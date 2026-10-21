@@ -55,10 +55,10 @@ Deno.test('before-user-created hook', async (t) => {
     }
 
     await t.step('rejects a throwaway inbox', async () => {
-      assertEquals(await call('jane@mailinator.com'), { status: 400, body: { error: { http_code: 400, message: DISPOSABLE } } });
+      assertEquals(await call('jane@mailinator.com'), { status: 200, body: { error: { http_code: 400, message: DISPOSABLE } } });
     });
     await t.step('rejects a domain that cannot receive mail', async () => {
-      assertEquals(await call('jane@doesnotexist-xyz-123.com'), { status: 400, body: { error: { http_code: 400, message: DEAD } } });
+      assertEquals(await call('jane@doesnotexist-xyz-123.com'), { status: 200, body: { error: { http_code: 400, message: DEAD } } });
     });
     await t.step('allows a real provider', async () => {
       assertEquals(await call('jane@outlook.com'), { status: 200, body: {} });

@@ -10,8 +10,10 @@ import { vettoDecision } from './vetto.ts';
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-// A 4xx with an `error` object blocks the signup and sends `message` to the client.
-const reject = (message: string) => json({ error: { http_code: 400, message } }, 400);
+// Blocks the signup and sends `message` to the client. The response status must
+// be 200: Supabase Auth turns a 400 from the hook into a 500 "Invalid payload
+// sent to hook" and drops the message (checked with e2e/signup-error.test.ts).
+const reject = (message: string) => json({ error: { http_code: 400, message } });
 
 type Payload = { user: { email?: string }; metadata?: { ip_address?: string } };
 type Runtime = { waitUntil(promise: Promise<unknown>): void };

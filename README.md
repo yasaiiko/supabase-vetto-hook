@@ -5,35 +5,36 @@ A Supabase **Before User Created** hook (Edge Function) that rejects throwaway i
 - **Free, no keys:** checks the domain with [Vetto](https://usevetto.com)'s keyless lookup ([`/v1/audit`](https://usevetto.com/docs#domain-lookup)).
 - **Fails open:** if the check is slow or down, the signup goes through. The hook gets 2.5 s of Supabase's 5 s budget. Optionally, [those signups are recorded for review](#review-signups-that-skipped-the-check-optional) instead of passing silently.
 - **Privacy relays allowed:** Apple Hide My Email, Firefox Relay and DuckDuckGo forward to real inboxes, so they get through.
-- **Tested:** the test starts the function and sends requests signed the way Supabase Auth signs them (Standard Webhooks).
+- **Tested:** the test starts the function and sends requests signed the way Supabase Auth signs them (Standard Webhooks). An end-to-end test checks what `supabase-js` gets on a real project.
 
-| Signup email | Hook response |
-|---|---|
-| `jane@mailinator.com` | `400` "Please use a permanent email address…" |
-| `jane@doesnotexist-xyz-123.com` | `400` "This email domain cannot receive mail…" |
-| `jane@outlook.com`, `jane@privaterelay.appleid.com` | `200 {}` (allowed) |
-| Phone signup (no email) | `200 {}` (allowed) |
-| Unsigned request | `401` |
+> **Return 200 to reject.** The hook rejects with HTTP **200** and an `error` object in the body. If the hook answers with an HTTP **400**, Supabase Auth returns a 500 "Invalid payload sent to hook" to the client and your message is lost. We checked this on a hosted project with supabase-js 2.118.0 (October 2026).
+
+| Signup email | Hook response | What `supabase-js` returns |
+|---|---|---|
+| `jane@mailinator.com` | `200 {"error":{"http_code":400,…}}` | `error.message`: "Please use a permanent email address…" |
+| `jane@doesnotexist-xyz-123.com` | `200 {"error":{"http_code":400,…}}` | `error.message`: "This email domain cannot receive mail…" |
+| `jane@outlook.com`, `jane@privaterelay.appleid.com` | `200 {}` | user created |
+| Phone signup (no email) | `200 {}` | user created |
+| Unsigned request | `401` | |
 
 ## Deploy (hosted Supabase)
 
-```bash
-git clone https://github.com/yasaiiko/supabase-vetto-hook
-cd supabase-vetto-hook
-supabase link --project-ref <your-project-ref>
-supabase functions deploy before-user-created-hook --no-verify-jwt
-```
-
-1. Supabase Dashboard → **Authentication → Hooks → Before User Created** → **HTTP**.
-2. URL: `https://<your-project-ref>.supabase.co/functions/v1/before-user-created-hook`
-3. Generate the secret, then save it as a function secret:
+1. Supabase Dashboard → **Authentication → Hooks → Add hook → Before User Created** → **HTTPS**.
+   URL: `https://<your-project-ref>.supabase.co/functions/v1/before-user-created-hook`. Generate the secret and create the hook. The function doesn't have to exist yet.
+2. Deploy. `supabase/config.toml` reads the secret from the environment, so export it first:
 
    ```bash
+   git clone https://github.com/yasaiiko/supabase-vetto-hook
+   cd supabase-vetto-hook
    cp .env.example .env   # paste the v1,whsec_... value
+   export BEFORE_USER_CREATED_HOOK_SECRET='v1,whsec_...'   # PowerShell: $env:BEFORE_USER_CREATED_HOOK_SECRET='v1,whsec_...'
+   supabase link --project-ref <your-project-ref>
+   supabase functions deploy before-user-created-hook --no-verify-jwt --use-api
    supabase secrets set --env-file .env
    ```
 
-4. Sign up with `x7@mailinator.com`: you get the error. A normal Gmail or Outlook address goes through.
+   `--use-api` bundles on Supabase's side, so Docker isn't needed.
+3. Sign up with `x7@mailinator.com`: you get the error. A normal Gmail or Outlook address goes through.
 
 The hook is available on the Supabase Free and Pro plans ([docs](https://supabase.com/docs/guides/auth/auth-hooks/before-user-created-hook)).
 
@@ -68,7 +69,7 @@ deno task test
 
 ### What the browser receives
 
-The hook returns `400` with its message. To check that `supabase-js` hands that exact text to your UI on your project and version (and not a generic error), run the end-to-end test against a project with the hook enabled. It calls `auth.signUp()` and `auth.signInWithOtp()` with a mailinator address, prints the error the client got, and fails if `error.message` isn't the hook's message:
+The hook rejects with `200` and an `error` object (see the note at the top). To check that `supabase-js` hands that exact text to your UI on your project and version (and not a generic error), run the end-to-end test against a project with the hook enabled. It calls `auth.signUp()` and `auth.signInWithOtp()` with a mailinator address, prints the error the client got, and fails if `error.message` isn't the hook's message:
 
 ```bash
 SUPABASE_URL=https://<ref>.supabase.co SUPABASE_ANON_KEY=<anon key> deno task test:e2e
@@ -82,7 +83,7 @@ The hook stops bad emails on the server. To also fix typos (`gmial.com` → "Did
 <script src="https://usevetto.com/v.js" data-site="pk_..." defer></script>
 ```
 
-[`example/signup.html`](example/signup.html) shows both together with `supabase-js`. The [hooks docs](https://supabase.com/docs/guides/auth/auth-hooks#error-handling) say the hook's message reaches the client; [`deno task test:e2e`](#what-the-browser-receives) checks that on your project. Keep a fallback message in your UI anyway.
+[`example/signup.html`](example/signup.html) shows both together with `supabase-js`. The hook's message reaches `error.message` (status 400, `AuthApiError`). [`deno task test:e2e`](#what-the-browser-receives) checks that on your project. Keep a fallback message in your UI anyway.
 
 ## Vetto Pro
 
