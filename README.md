@@ -3,7 +3,7 @@
 A Supabase **Before User Created** hook (Edge Function) that rejects throwaway inboxes and email domains that can't receive mail, before the user row exists. It covers every signup path: email/password, magic link, OTP and OAuth.
 
 - **Free, no keys:** checks the domain with [Vetto](https://usevetto.com)'s keyless lookup ([`/v1/audit`](https://usevetto.com/docs#domain-lookup)).
-- **Fails open:** if the check is slow or down, the signup goes through. The hook gets 2.5 s of Supabase's 5 s budget.
+- **Fails open:** if the check is slow or down, the signup goes through. The hook gets 2.5 s of Supabase's 5 s budget. Optionally, [those signups are recorded for review](#review-signups-that-skipped-the-check-optional) instead of passing silently.
 - **Privacy relays allowed:** Apple Hide My Email, Firefox Relay and DuckDuckGo forward to real inboxes, so they get through.
 - **Tested:** the test starts the function and sends requests signed the way Supabase Auth signs them (Standard Webhooks).
 
@@ -46,12 +46,32 @@ supabase start
 supabase functions serve --env-file .env
 ```
 
+## Review signups that skipped the check (optional)
+
+Failing open has a weak spot: someone who controls a throwaway domain can make its DNS answer slowly on purpose, and every signup gets through. The hook can't wait longer, but it can keep a record. With `REVIEW_UNCHECKED_SIGNUPS=true`, every signup allowed without a verdict (timeout, Vetto unreachable or rate limited, DNS error) is written to `public.signups_pending_review`. After answering Supabase, the function checks the domain again with an 8 s timeout and stores what it finds (status, MX hosts, disposable). This runs in the background with `EdgeRuntime.waitUntil`, so it never uses the hook's budget.
+
+1. Create the table ([migration](supabase/migrations/20261021000000_signups_pending_review.sql)): `supabase db push`, or paste it into the SQL editor. RLS is on with no policies and `anon`/`authenticated` have no grants. Only the service role (the hook) writes, and you read it from the dashboard.
+2. Add `REVIEW_UNCHECKED_SIGNUPS="true"` to `.env` and run `supabase secrets set --env-file .env`. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are already set in Edge Functions.
+3. Once a week, run [`supabase/queries/review-unchecked-signups.sql`](supabase/queries/review-unchecked-signups.sql). Signs to look for:
+   - repeat signups from one /24 (IPv4) or /48 (IPv6);
+   - one MX provider behind many unrelated domains;
+   - domains that were still slow on the re-check;
+   - users the re-check says the hook would have blocked.
+
 ## Test
 
 Requires [Deno](https://deno.com). The test calls the live keyless lookup.
 
 ```bash
 deno task test
+```
+
+### What the browser receives
+
+The hook returns `400` with its message. To check that `supabase-js` hands that exact text to your UI on your project and version (and not a generic error), run the end-to-end test against a project with the hook enabled. It calls `auth.signUp()` and `auth.signInWithOtp()` with a mailinator address, prints the error the client got, and fails if `error.message` isn't the hook's message:
+
+```bash
+SUPABASE_URL=https://<ref>.supabase.co SUPABASE_ANON_KEY=<anon key> deno task test:e2e
 ```
 
 ## Add the browser check (optional)
@@ -62,7 +82,7 @@ The hook stops bad emails on the server. To also fix typos (`gmial.com` → "Did
 <script src="https://usevetto.com/v.js" data-site="pk_..." defer></script>
 ```
 
-[`example/signup.html`](example/signup.html) shows both together with `supabase-js`. Keep a fallback message in your UI: the [hooks docs](https://supabase.com/docs/guides/auth/auth-hooks#error-handling) say a hook error reaches the client, but some versions map it to a generic error.
+[`example/signup.html`](example/signup.html) shows both together with `supabase-js`. The [hooks docs](https://supabase.com/docs/guides/auth/auth-hooks#error-handling) say the hook's message reaches the client; [`deno task test:e2e`](#what-the-browser-receives) checks that on your project. Keep a fallback message in your UI anyway.
 
 ## Vetto Pro
 
